@@ -8,7 +8,7 @@ appendCommitMessageToRunName: false
 trigger:
   branches:
     include:
-    - release
+    - release*
 
 # Trigger on pull request completion into 'release' branch
 #pr:
@@ -42,8 +42,6 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
-            $username = '$(username)'
-            $password = '$(password)' 
             $pkgManifest=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
             $dbTargets=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "dbTarget.txt"  | Select-Object -First 1 -ExpandProperty Name
                  
