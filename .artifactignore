@@ -1,0 +1,10 @@
+liquibase/**
+sybase-driver/**
+CODEOWNERS
+*.md
+
+azure*.yml
+azure*.yml*
+**/*.md
+.git/**
+.gitignore
