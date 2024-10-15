@@ -1,4 +1,4 @@
-# @name: azure-pipeline.yml
+# @name: azure-pipeline-oracledb.yml
 # @author: Richard K. (richard@rkkoranteng.com)
 # @description: Database release CI/CD pipeline
 
