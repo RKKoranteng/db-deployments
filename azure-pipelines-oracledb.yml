@@ -31,7 +31,7 @@ stages:
       displayName: "Continous Integration"
       
       pool:
-        name: 'Default'
+        name: 'Azure Pipelines'
         workspace:
           clean: outputs
 
@@ -42,8 +42,8 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
-            $pkgManifest=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
-            $dbTargets=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "dbTarget.txt"  | Select-Object -First 1 -ExpandProperty Name
+            $pkgManifest=Get-ChildItem -Path $(System.Azure PipelinesWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
+            $dbTargets=Get-ChildItem -Path $(System.Azure PipelinesWorkingDirectory) -Filter "dbTarget.txt"  | Select-Object -First 1 -ExpandProperty Name
                  
             $content = Get-Content $pkgManifest
             $inNameSection = $false
@@ -111,30 +111,30 @@ stages:
       - task: CopyFiles@2
         displayName: 'Download Liquibase assets'  
         inputs:
-          SourceFolder: $(System.DefaultWorkingDirectory)/liquibase
+          SourceFolder: $(System.Azure PipelinesWorkingDirectory)/liquibase
           Contents: |
             dbchangelog.xml
             liquibase.properties
             liquibase.checks-settings.conf
             liquibase.flowfile-ci.yml
 
-          TargetFolder: '$(System.DefaultWorkingDirectory)'
+          TargetFolder: '$(System.Azure PipelinesWorkingDirectory)'
       
       - task: PowerShell@2
         displayName: 'Create Liquibase changelog'
         inputs:
           targetType: 'inline'
           script: |
-            Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "<changeSet author=`"$(Build.QueuedBy)`" id=`"$(PackageName)`">"
+            Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "<changeSet author=`"$(Build.QueuedBy)`" id=`"$(PackageName)`">"
       
-            $pkgManifest=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
+            $pkgManifest=Get-ChildItem -Path $(System.Azure PipelinesWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
       
             # Initialize variables to track the state
             $insideSection = $false
             $results = @()
       
             # Read the file line by line
-            Get-Content $(System.DefaultWorkingDirectory)\$pkgManifest | ForEach-Object {
+            Get-Content $(System.Azure PipelinesWorkingDirectory)\$pkgManifest | ForEach-Object {
                 # Trim the line of any leading or trailing whitespace
                 $line = $_.Trim()
       
@@ -160,22 +160,22 @@ stages:
             foreach ($line in $results) {  
                 $scriptPrefix = [regex]::Match($line, "(?<=/)(.*?)(?=\.sql)").Value          
       
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "    <changeSet author=`"$(Build.QueuedBy)`" id=`"$scriptPrefix`">"
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "       <sqlFile path=`"$line`" endDelimiter=`"GO`" />" 
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "       <rollback>"
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "          <sqlFile path=`"rollbacks/$scriptPrefix.sql`" endDelimiter=`"GO`" />"
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "       </rollback>"
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "    </changeSet>"
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "    </changeSet>"
-                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value ""
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "    <changeSet author=`"$(Build.QueuedBy)`" id=`"$scriptPrefix`">"
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "       <sqlFile path=`"$line`" endDelimiter=`"GO`" />" 
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "       <rollback>"
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "          <sqlFile path=`"rollbacks/$scriptPrefix.sql`" endDelimiter=`"GO`" />"
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "       </rollback>"
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "    </changeSet>"
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "    </changeSet>"
+                Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value ""
             }
       
-            Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "</databaseChangeLog>"
+            Add-Content -Path $(System.Azure PipelinesWorkingDirectory)\dbchangelog.xml -Value "</databaseChangeLog>"
       
       - task: PublishPipelineArtifact@1
         displayName: 'Publish build artifact'
         inputs:
-          targetPath: '$(System.DefaultWorkingDirectory)'  # Specify the folder to publish
+          targetPath: '$(System.Azure PipelinesWorkingDirectory)'  # Specify the folder to publish
           artifactName: 'package'  # Name of the artifact to publish
           publishLocation: 'pipeline'
       
@@ -197,7 +197,7 @@ stages:
       displayName: "Continous Testing"
 
       pool:
-        name: 'Defaults'
+        name: 'Azure Pipelines'
         workspace:
           clean: resources
 
@@ -207,7 +207,7 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
-              $flowsargumentlist = "flow --flow-file=$(System.DefaultWorkingDirectory)/liquibase.flowfile-ci.yaml" 
+              $flowsargumentlist = "flow --flow-file=$(System.Azure PipelinesWorkingDirectory)/liquibase.flowfile-ci.yaml" 
               Start-Job -Name runchecks -ScriptBlock {param($a,$b)
                 Start-Process -FilePath "C:\Program Files\liquibase\liquibase.bat" -ArgumentList $a
                 } -Arg $flowsargumentlist
@@ -231,7 +231,7 @@ stages:
       displayName: "Continous Deployment - QA"
       
       pool:
-        name: 'Defualts'
+        name: 'Azure Pipelines'
         workspace:
           clean: resources
 
@@ -249,7 +249,7 @@ stages:
           targetType: 'inline'
           script: | 
               Write-Host "Using the downloaded artifact..."
-              Get-ChildItem -Path $(System.DefaultWorkingDirectory)
+              Get-ChildItem -Path $(System.Azure PipelinesWorkingDirectory)
               Write-Host "Artifact deployed successfully!"
               
               $timestamp = get-date -Format "yyyy-MM-dd_hhmmss"
@@ -258,7 +258,7 @@ stages:
               {
                               
                 # build connection url
-                $defaultFile = '$(System.DefaultWorkingDirectory)/liquibase.properties'
+                $defaultFile = '$(System.Azure PipelinesWorkingDirectory)/liquibase.properties'
                 #$url = "jdbc:" + $(DB.TYPE) + "://" + $(DB.SERVER) + ":" + $(DB.PORT) + ";databaseName=" + $(DB.NAME) + ";trustServerCertificate=true;"
                 $url = "jdbc:jtds:$(DB.TYPE)://$(DB.SERVER):$(DB.PORT);databaseName=$(DB.NAME);trustServerCertificate=true;"
                 echo "$url"
@@ -266,10 +266,10 @@ stages:
                 $jobname = "$(DB.SERVER)_$timestamp"
                 echo "$jobname"
                 
-                $logfile = '$(System.DefaultWorkingDirectory)/deployments.log'
+                $logfile = '$(System.Azure PipelinesWorkingDirectory)/deployments.log'
                 echo "$logfile"
                 
-                $argumentlist = "--classpath=`"$(System.DefaultWorkingDirectory)/liquibase/sybase-driver/jtds-1.3.1.jar`" --defaultsFile=`"$(System.DefaultWorkingDirectory)/liquibase.properties`" --changeLogFile=dbchangelog.xml --url=$url --username=liquibase --password=changeme --log-level=SEVERE update"
+                $argumentlist = "--classpath=`"$(System.Azure PipelinesWorkingDirectory)/liquibase/sybase-driver/jtds-1.3.1.jar`" --defaultsFile=`"$(System.Azure PipelinesWorkingDirectory)/liquibase.properties`" --changeLogFile=dbchangelog.xml --url=$url --username=liquibase --password=changeme --log-level=SEVERE update"
                 echo "$argumentlist"
                 
                 Start-Job -Name $jobname -ScriptBlock {param($a,$b)
@@ -295,7 +295,7 @@ stages:
       - task: PublishPipelineArtifact@1
         displayName: 'Publish release artifact'
         inputs:
-          targetPath: '$(System.DefaultWorkingDirectory)/deployments.log'  # Specify the folder to publish
+          targetPath: '$(System.Azure PipelinesWorkingDirectory)/deployments.log'  # Specify the folder to publish
           artifactName: 'deployment-log'  # Name of the artifact to publish
           publishLocation: 'pipeline'
         condition: succeededOrFailed()
