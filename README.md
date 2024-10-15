@@ -1,4 +1,4 @@
-# Database Systems - Database Releases
+# Database Deployments
 This project is designed to provide self-service database release capability.
 
 ## Wiki
