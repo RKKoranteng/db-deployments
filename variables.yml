@@ -1,0 +1,19 @@
+# These variables are Azure DevOps variables
+# not available for consumption inside batch scripts
+# or Liquibase flow files.
+# Must use $() notation to access these variables
+ 
+variables:
+  DB.TYPE: 'oracle'
+
+  DEV.Server: 'dev-srv'
+  DEV.DB: 'dev'
+  DEV.PORT: '1521'
+    
+  QA.Server: 'qa-srv'
+  QA.DB: 'qa'
+  QA.PORT: '1521'
+
+  PROD.Server: 'prod-srv'
+  PROD.DB: 'prod'
+  PROD.PORT: '1521'  
