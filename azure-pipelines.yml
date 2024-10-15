@@ -1,0 +1,303 @@
+# @name: azure-pipeline.yml
+# @author: Richard K. (richard@rkkoranteng.com)
+# @description: Database release CI/CD pipeline
+
+appendCommitMessageToRunName: false
+
+# Trigger when changes are pushed or merged to the 'release' branch
+trigger:
+  branches:
+    include:
+    - release
+
+# Trigger on pull request completion into 'release' branch
+#pr:
+#  branches:
+#    include:
+#    - release
+
+name: $(BuildName)
+
+# Reference the variable template
+variables:
+- template: variables.yml
+
+stages:
+- stage: Build
+  displayName: "Build Stage"
+  
+  jobs:
+    - job: CI
+      displayName: "Continous Integration"
+      
+      pool:
+        name: 'Default'
+        workspace:
+          clean: outputs
+
+      steps:
+      
+      - task: PowerShell@2
+        displayName: 'Declare build variables'
+        inputs:
+          targetType: 'inline'
+          script: |
+            $username = '$(username)'
+            $password = '$(password)' 
+            $pkgManifest=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
+            $dbTargets=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "dbTarget.txt"  | Select-Object -First 1 -ExpandProperty Name
+                 
+            $content = Get-Content $pkgManifest
+            $inNameSection = $false
+             
+            # get package name from manifest file
+            foreach ($line in $content) {
+              if ($line -match "^\[name\]") {
+                $inNameSection = $true
+                continue
+              }
+      
+              if ($line -match "^\[.*\]" -and $inNameSection) {
+                break
+              }
+      
+      
+              if ($inNameSection -and $line -notmatch "^#") { 
+                $line = $line.Trim()
+                if ($line) {
+                  $PackageName=$line
+                  Write-Output "Package Name: $PackageName"
+                }
+              }
+            }
+      
+            $inNameSection = $false
+      
+            # get package version from manifest file
+            foreach ($line in $content) {
+              if ($line -match "^\[version\]") {
+                $inNameSection = $true
+                continue
+              }
+      
+              if ($line -match "^\[.*\]" -and $inNameSection) {
+                break
+              }
+      
+      
+              if ($inNameSection -and $line -notmatch "^#") {
+                $line = $line.Trim()
+                if ($line) {
+                  $Version=$line
+                  Write-Output "Version: $Version"
+                }
+              }
+            }
+      
+            $DBName=($PackageName-split '-')[0]
+      
+            $timestamp = get-date -Format "yyyy-MM-dd_hhmmss"
+            $releasepath = 'E:\sybase_release\packages\' + $PackageName  + '\' + $Version
+      
+            # declare variables for pipeline tasks below
+            echo "##vso[task.setvariable variable=timestamp]$timestamp"
+            echo "##vso[task.setvariable variable=releasepath]$releasepath"
+            echo "##vso[task.setvariable variable=PackageName]$PackageName"
+            echo "##vso[task.setvariable variable=ProcscriptsPath]$ProcscriptsPath"
+            echo "##vso[task.setvariable variable=Version]$Version"
+            echo "##vso[task.setvariable variable=DBName]$DBName"
+            echo "##vso[task.setvariable variable=username]$username"
+            echo "##vso[task.setvariable variable=password]$password"
+           
+      
+      - task: CopyFiles@2
+        displayName: 'Download Liquibase assets'  
+        inputs:
+          SourceFolder: $(System.DefaultWorkingDirectory)/liquibase
+          Contents: |
+            dbchangelog.xml
+            liquibase.properties
+            liquibase.checks-settings.conf
+            liquibase.flowfile-ci.yml
+
+          TargetFolder: '$(System.DefaultWorkingDirectory)'
+      
+      - task: PowerShell@2
+        displayName: 'Create Liquibase changelog'
+        inputs:
+          targetType: 'inline'
+          script: |
+            Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "<changeSet author=`"$(Build.QueuedBy)`" id=`"$(PackageName)`">"
+      
+            $pkgManifest=Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Filter "manifest.txt"  | Select-Object -First 1 -ExpandProperty Name
+      
+            # Initialize variables to track the state
+            $insideSection = $false
+            $results = @()
+      
+            # Read the file line by line
+            Get-Content $(System.DefaultWorkingDirectory)\$pkgManifest | ForEach-Object {
+                # Trim the line of any leading or trailing whitespace
+                $line = $_.Trim()
+      
+                # Check if the line marks the start of the section
+                if ($line -eq "[contents]") {
+                    $insideSection = $true
+                    return
+                }
+      
+                # Check if the line marks the end of the section
+                if ($line -eq "[description]") {
+                    $insideSection = $false
+                    return
+                }
+      
+                # If inside the desired section and the line is not a comment
+                if ($insideSection -and $line -ne "" -and -not ($line -like '#*')) {
+                    $results += $line
+                }
+            }
+      
+            # Output the collected lines to build dbchangelog.xml
+            foreach ($line in $results) {  
+                $scriptPrefix = [regex]::Match($line, "(?<=/)(.*?)(?=\.sql)").Value          
+      
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "    <changeSet author=`"$(Build.QueuedBy)`" id=`"$scriptPrefix`">"
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "       <sqlFile path=`"$line`" endDelimiter=`"GO`" />" 
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "       <rollback>"
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "          <sqlFile path=`"rollbacks/$scriptPrefix.sql`" endDelimiter=`"GO`" />"
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "       </rollback>"
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "    </changeSet>"
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "    </changeSet>"
+                Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value ""
+            }
+      
+            Add-Content -Path $(System.DefaultWorkingDirectory)\dbchangelog.xml -Value "</databaseChangeLog>"
+      
+      - task: PublishPipelineArtifact@1
+        displayName: 'Publish build artifact'
+        inputs:
+          targetPath: '$(System.DefaultWorkingDirectory)'  # Specify the folder to publish
+          artifactName: 'package'  # Name of the artifact to publish
+          publishLocation: 'pipeline'
+      
+      - task: PowerShell@2
+        displayName: 'Rename build run'      
+        inputs:
+          targetType: 'inline'
+          script: | 
+            $BuildName = "$(PackageName) v.$(Version) - $(Build.BuildId)"
+            Write-Host "##vso[build.updatebuildnumber]$BuildName"
+            
+- stage: Test
+  displayName: "Test Stage"
+  dependsOn: Build  # Ensure this stage only runs after the Build stage
+  condition: succeeded()  # Run only if the previous stage succeeded
+  
+  jobs:
+    - job: Test
+      displayName: "Continous Testing"
+
+      pool:
+        name: 'Defaults'
+        workspace:
+          clean: resources
+
+      steps:      
+      - task: PowerShell@2
+        displayName: 'Liquibase Flow - Run Checks'    
+        inputs:
+          targetType: 'inline'
+          script: |
+              $flowsargumentlist = "flow --flow-file=$(System.DefaultWorkingDirectory)/liquibase.flowfile-ci.yaml" 
+              Start-Job -Name runchecks -ScriptBlock {param($a,$b)
+                Start-Process -FilePath "C:\Program Files\liquibase\liquibase.bat" -ArgumentList $a
+                } -Arg $flowsargumentlist
+                
+                
+              Write-Host Last exit code: $LASTEXITCODE
+        env:
+          #TAG: ${{ parameters.TAG }}
+          LIQUIBASE_COMMAND_URL: "jdbc:jtds:$(DB.TYPE)://$(DB.SERVER):$(DB.PORT);databaseName=$(DB.NAME);trustServerCertificate=true;"
+          LIQUIBASE_COMMAND_USERNAME: $(USERNAME)
+          LIQUIBASE_COMMAND_PASSWORD: $(PASSWORD)
+          LIQUIBASE_LICENSE_KEY: $(LIQUIBASE_LICENSE_KEY)
+
+- stage: Release
+  displayName: "Release Stage"
+  dependsOn: Test  # Ensure this stage only runs after the Build stage
+  condition: succeeded()  # Run only if the previous stage succeeded
+  
+  jobs:
+    - job: CD_QA
+      displayName: "Continous Deployment - QA"
+      
+      pool:
+        name: 'Defualts'
+        workspace:
+          clean: resources
+
+      steps:
+      # Download the previously published artifact
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Download build artifact'
+        inputs:
+          artifactName: 'package'  # Name of the artifact to download
+          targetPath: '$(Pipeline.Workspace)/downloaded_artifact'  # Where to download it      
+          
+      - task: PowerShell@2
+        displayName: 'Liquibase deploy'          
+        inputs:
+          targetType: 'inline'
+          script: | 
+              Write-Host "Using the downloaded artifact..."
+              Get-ChildItem -Path $(System.DefaultWorkingDirectory)
+              Write-Host "Artifact deployed successfully!"
+              
+              $timestamp = get-date -Format "yyyy-MM-dd_hhmmss"
+              
+              try
+              {
+                              
+                # build connection url
+                $defaultFile = '$(System.DefaultWorkingDirectory)/liquibase.properties'
+                #$url = "jdbc:" + $(DB.TYPE) + "://" + $(DB.SERVER) + ":" + $(DB.PORT) + ";databaseName=" + $(DB.NAME) + ";trustServerCertificate=true;"
+                $url = "jdbc:jtds:$(DB.TYPE)://$(DB.SERVER):$(DB.PORT);databaseName=$(DB.NAME);trustServerCertificate=true;"
+                echo "$url"
+                
+                $jobname = "$(DB.SERVER)_$timestamp"
+                echo "$jobname"
+                
+                $logfile = '$(System.DefaultWorkingDirectory)/deployments.log'
+                echo "$logfile"
+                
+                $argumentlist = "--classpath=`"$(System.DefaultWorkingDirectory)/liquibase/sybase-driver/jtds-1.3.1.jar`" --defaultsFile=`"$(System.DefaultWorkingDirectory)/liquibase.properties`" --changeLogFile=dbchangelog.xml --url=$url --username=liquibase --password=changeme --log-level=SEVERE update"
+                echo "$argumentlist"
+                
+                Start-Job -Name $jobname -ScriptBlock {param($a,$b)
+                  Start-Process -FilePath "C:\Program Files\liquibase\liquibase.bat" -ArgumentList $a -RedirectStandardError $b
+                } -Arg $argumentlist,$logfile
+              	
+                #$servertype = $null
+                #$logfile = $null
+                
+                Get-Job | Wait-Job
+                Start-Sleep -s 20
+                
+                $results = get-content -Path $logfile -Tail 1
+              	echo "$results"
+                
+                if ($results -ne "Liquibase command 'update' was executed successfully.") {throw "Liquibase didn't exit with success for: " + $jobname}
+              }
+              catch
+              {
+                Write-Error "Error: $($_.Exception.Message)" -ErrorAction Stop
+              }
+
+      - task: PublishPipelineArtifact@1
+        displayName: 'Publish release artifact'
+        inputs:
+          targetPath: '$(System.DefaultWorkingDirectory)/deployments.log'  # Specify the folder to publish
+          artifactName: 'deployment-log'  # Name of the artifact to publish
+          publishLocation: 'pipeline'
+        condition: succeededOrFailed()
