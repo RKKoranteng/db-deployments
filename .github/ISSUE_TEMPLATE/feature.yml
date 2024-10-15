@@ -1,0 +1,21 @@
+name: ⚡ Request feature/enhancement
+description: Submit proposals for discussion
+title: "[RFC]: "
+labels: ["question"]
+assignees:
+  - RKKoranteng
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for your feature/enhancement proposal!
+  - type: textarea
+    id: feature
+    attributes:
+      label: Feature Enhancement/Proposal
+      description: Tell us what you'd like to see.
+      placeholder: |
+        As a [ developer, tester, manager ]. 
+        I [ want, need] [ describe feature ]
+        So that [ describe the value of your feature ]
+    validations:
+      required: true
